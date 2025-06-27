@@ -1,7 +1,9 @@
 import { createClient } from 'redis'
 
 const redis = createClient({
-  url: 'rediss://settledredis.g2e8defaeefyetdc.southeastasia.azurecontainer.io:6380',
+  url:
+    process.env.REDIS_URL ||
+    'redis://settledredis.g2e8defaeefyetdc.southeastasia.azurecontainer.io:6379',
 })
 
 redis.on('connect', () => {
