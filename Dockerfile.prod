@@ -8,7 +8,11 @@ RUN npm install
 
 COPY . .
 
+RUN npx tsc 
+RUN rm -r src
+
 EXPOSE 3000 80 
 
-CMD ["npm", "run", "dev"]
+CMD ["npm", "start"]
+
 

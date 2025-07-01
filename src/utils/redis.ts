@@ -1,9 +1,16 @@
 import { createClient } from 'redis'
 
+const REDIS_HOST = process.env.REDIS_HOST || 'redis'
+const REDIS_PASSWORD = process.env.REDIS_PASSWORD
+const REDIS_PORT = process.env.REDIS_PORT || (6379 as number)
+
 const redis = createClient({
-  url:
-    process.env.REDIS_URL ||
-    'redis://settledredis.g2e8defaeefyetdc.southeastasia.azurecontainer.io:6379',
+  socket: {
+    host: REDIS_HOST,
+    tls: REDIS_PORT === 6380,
+    port: REDIS_PORT as number,
+  },
+  password: REDIS_PASSWORD,
 })
 
 redis.on('connect', () => {
