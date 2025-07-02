@@ -22,6 +22,7 @@ export async function getGuestToken(req: Request, res: Response) {
       message: 'Successfully fetched a token',
     })
   } catch (error) {
+    console.log(error)
     res.status(500).json({
       message: 'Something went wrong in the server',
     })
