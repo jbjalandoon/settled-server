@@ -15,9 +15,9 @@ export async function getRoom(req: Request, res: Response) {
     const { id } = req.cookies
     const { room } = req.params
 
-    const roomDetails = (await redis.json.GET(`room:${room}`, {
-      path: '.',
-    })) as {} as RoomDetails
+    const [roomDetails] = (await redis.json.get(`room:${room}`, {
+      path: '$',
+    })) as {} as RoomDetails[]
 
     if (!roomDetails) {
       res.status(404).json({
@@ -32,6 +32,7 @@ export async function getRoom(req: Request, res: Response) {
       .cookie('room', room)
       .json({ ...roomDetails, joined: Boolean(isPlayerJoined) })
   } catch (error) {
+    console.log(error)
     res.status(200).json({
       message: 'Something went wrong in the server',
     })
@@ -110,9 +111,9 @@ export async function joinRoom(req: Request, res: Response) {
     const { name } = req.body
     let { avatar } = req.body
 
-    const players = (await redis.json.GET(`room:${room}`, {
-      path: '.players',
-    })) as {} as Player
+    const [players] = (await redis.json.GET(`room:${room}`, {
+      path: '$.players',
+    })) as {} as Player[]
 
     if (!players) {
       res.status(404).json({ message: 'Room does not exists.' })
@@ -151,7 +152,7 @@ export async function joinRoom(req: Request, res: Response) {
 
     const isPlayerJoined = await redis.json.set(
       `room:${room}`,
-      `.players.${id}`,
+      `$.players["${id}"]`,
       player as {}
     )
 
@@ -162,6 +163,7 @@ export async function joinRoom(req: Request, res: Response) {
     gameSocket.emit('player-joined', player, id)
     res.status(201).json({ message: 'Successfully Joined' })
   } catch (error) {
+    console.log(error)
     res.status(500).json({
       message: 'Something went wrong in the server',
     })
@@ -189,7 +191,7 @@ export async function setName(req: Request, res: Response) {
 
     const success = await redis.json.SET(
       `room:${room}`,
-      `$.players.${id}.name`,
+      `$.players["${id}"].name`,
       name
     )
 
@@ -208,13 +210,12 @@ export async function leaveRoom(req: Request, res: Response) {
   try {
     const { id } = req.cookies
     const { room } = req.params
-    const host = (await redis.json.GET(`room:${room}`, {
-      path: '.host',
-    })) as string
-    const players = (await redis.json.GET(`room:${room}`, {
-      path: '.players',
-    })) as {} as Player
-    console.log(players)
+    const [host] = (await redis.json.GET(`room:${room}`, {
+      path: '$.host',
+    })) as string[]
+    const [players] = (await redis.json.GET(`room:${room}`, {
+      path: '$.players',
+    })) as {} as Player[]
     if (Object.keys(players).length === 1) {
       const deleteRoom = await redis.json.DEL(`room:${room}`, '$')
       if (deleteRoom === 1) {
@@ -230,7 +231,7 @@ export async function leaveRoom(req: Request, res: Response) {
     if (host === id) {
       const newHost = Object.keys(players)[0]
 
-      const updateHost = await redis.json.set(`room:${room}`, '.host', newHost)
+      const updateHost = await redis.json.set(`room:${room}`, '$.host', newHost)
       if (!updateHost) {
         throw new Error()
       }
@@ -238,7 +239,7 @@ export async function leaveRoom(req: Request, res: Response) {
 
     const updateRoom = await redis.json.set(
       `room:${room}`,
-      '.players',
+      '$.players',
       players as {}
     )
 
@@ -258,9 +259,9 @@ export async function startRoom(req: Request<{ room: string }>, res: Response) {
   try {
     const { room } = req.params
 
-    const roomDetail = (await redis.json.get(`room:${room}`, {
-      path: '.',
-    })) as {} as RoomDetails
+    const [roomDetail] = (await redis.json.get(`room:${room}`, {
+      path: '$',
+    })) as {} as RoomDetails[]
 
     if (Object.keys(roomDetail.players).length !== 2) {
       res.status(400).json({ message: 'You need 2 players to start the game' })
@@ -317,9 +318,9 @@ export async function resetRoom(req: Request, res: Response) {
   try {
     const { room } = req.params
 
-    const roomDetails = (await redis.json.get(`room:${room}`, {
-      path: '.',
-    })) as {} as RoomDetails
+    const [roomDetails] = (await redis.json.get(`room:${room}`, {
+      path: '$',
+    })) as {} as RoomDetails[]
 
     roomDetails.phase = 0
     roomDetails.winner = null

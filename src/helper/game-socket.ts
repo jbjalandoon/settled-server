@@ -97,18 +97,18 @@ function checkWin(
 async function nextPhase(room: string) {
   const newPhase = (await redis.json.numIncrBy(
     `room:${room}`,
-    `.phase`,
+    `$.phase`,
     1
   )) as number
 
-  const games = (await redis.json.get(`room:${room}`, {
-    path: `.games`,
-  })) as Games[]
+  const [games] = (await redis.json.get(`room:${room}`, {
+    path: `$.games`,
+  })) as Games[][]
 
   if (!games[newPhase]) {
-    const players = (await redis.json.get(`room:${room}`, {
-      path: '.players',
-    })) as {} as Player
+    const [players] = (await redis.json.get(`room:${room}`, {
+      path: '$.players',
+    })) as {} as Player[]
 
     const playerKeys = Object.keys(players)
 
@@ -138,7 +138,7 @@ async function nextPhase(room: string) {
       for (const key of Object.keys(stats)) {
         await redis.json.set(
           `room:${room}`,
-          `$.players.${key}.gameStats.tieBreaker`,
+          `$.players["${key}"].gameStats.tieBreaker`,
           stats[key] as {}
         )
       }
@@ -179,33 +179,36 @@ function initializeGameSocket(nameSpace: Namespace) {
       socket.join(roomId)
     })
     socket.on('toggle-game', async (title: Games) => {
-      const games = new Set<Games>(
-        (await redis.json.get(`room:${room}`, {
-          path: '.games',
-        })) as Games[]
-      )
-      if (games.has(title)) {
-        games.delete(title)
+      const [games] = (await redis.json.get(`room:${room}`, {
+        path: '$.games',
+      })) as Games[][]
+
+      const gameSets = new Set<Games>(games)
+
+      if (gameSets.has(title)) {
+        gameSets.delete(title)
       } else {
-        games.add(title)
+        gameSets.add(title)
       }
 
-      const updated = await redis.json.set(`room:${room}`, '.games', [...games])
+      const updated = await redis.json.set(`room:${room}`, '$.games', [
+        ...gameSets,
+      ])
 
       if (!updated) {
         return socket.emit('toggle-game-error')
       }
 
-      nameSpace.to(room).emit('toggle-game', [...games])
+      nameSpace.to(room).emit('toggle-game', [...gameSets])
     })
     socket.on('player-ready', async () => {
-      const ready = (await redis.json.GET(`room:${room}`, {
-        path: `.players.${id}.ready`,
-      })) as boolean
+      const [ready] = (await redis.json.GET(`room:${room}`, {
+        path: `$.players["${id}"].ready`,
+      })) as boolean[]
 
       const update = await redis.json.set(
         `room:${room}`,
-        `$.players.${id}.ready`,
+        `$.players["${id}"].ready`,
         !ready
       )
 
@@ -213,9 +216,9 @@ function initializeGameSocket(nameSpace: Namespace) {
         socket.emit('player-ready-error')
       }
 
-      const players = (await redis.json.get(`room:${room}`, {
-        path: '.players',
-      })) as {} as Player
+      const [players] = (await redis.json.get(`room:${room}`, {
+        path: '$.players',
+      })) as {} as Player[]
 
       let status: RoomStatus = 'in-game'
 
@@ -226,13 +229,13 @@ function initializeGameSocket(nameSpace: Namespace) {
         const DURATION = 3000 // 3 seconds
         const start = Date.now() + DURATION
 
-        const { games, phase } = (await redis.json.get(`room:${room}`, {
-          path: '.',
-        })) as {} as RoomDetails
+        const [{ games, phase }] = (await redis.json.get(`room:${room}`, {
+          path: '$',
+        })) as {} as RoomDetails[]
 
         await redis.json.set(
           `room:${room}`,
-          `$.gameDetails.${games[phase]}.startTime`,
+          `$.gameDetails["${games[phase]}"].startTime`,
           start
         )
 
@@ -245,9 +248,9 @@ function initializeGameSocket(nameSpace: Namespace) {
 
         if (games[phase] === 'memory') {
           memoryTimeout = setTimeout(async () => {
-            const players = (await redis.json.get(`room:${room}`, {
-              path: '.players',
-            })) as {} as Player
+            const [players] = (await redis.json.get(`room:${room}`, {
+              path: '$.players',
+            })) as {} as Player[]
 
             const stats: { [key in string]: number } = {}
             Object.keys(players).forEach((key) => {
@@ -281,7 +284,7 @@ function initializeGameSocket(nameSpace: Namespace) {
             gameSocket.emit('memory-game-over', winner, null)
             await nextPhase(room)
             // 7 minutes
-          }, 420000)
+          }, 8000)
         }
 
         nameSpace.to(room).emit('countdown', start)
@@ -290,69 +293,51 @@ function initializeGameSocket(nameSpace: Namespace) {
       nameSpace.to(room).emit('player-ready', id, !ready)
     })
     socket.on('avatar-change', async (avatar: number) => {
-      await redis.json.SET(`room:${room}`, `$.players.${id}.avatar`, avatar)
+      await redis.json.set(`room:${room}`, `$.players["${id}"].avatar`, avatar)
 
       nameSpace.to(room).emit('avatar-change', id, avatar)
     })
-    socket.on('typing-update-entry', async (value: string) => {
-      const gameStats = (await redis.json.get(`room:${room}`, {
-        path: `.players.${id}.gameStats.typing`,
-      })) as {} as TypingGameStats
-      const gameDetails = (await redis.json.get(`room:${room}`, {
-        path: `.gameDetails.typing`,
-      })) as {} as TypingGameDetails
+    socket.on(
+      'typing-update-data',
+      async (entry: string[], right: string[], current) => {
+        const [gameDetails] = (await redis.json.get(`room:${room}`, {
+          path: `$.gameDetails.typing`,
+        })) as {} as TypingGameDetails[]
 
-      gameStats.entry.push(value)
-      const entryLength = gameStats.entry.join(' ').length
-      const elapsedTime = (Date.now() - gameDetails.startTime!) / 1000 / 60
-      gameStats.wpm = entryLength / 5 / elapsedTime
-      gameStats.current = gameStats.right.shift() || ''
-
-      await redis.json.set(
-        `room:${room}`,
-        `$.players.${id}.gameStats.typing`,
-        gameStats as {}
-      )
-
-      nameSpace.to(room).emit('typing-update-entry', id, gameStats)
-    })
-    socket.on('typing-update-wpm', async () => {
-      const players = (await redis.json.get(`room:${room}`, {
-        path: `.players`,
-      })) as {} as Player
-      const playersWPM = []
-
-      const gameDetails = (await redis.json.get(`room:${room}`, {
-        path: `.gameDetails.typing`,
-      })) as {} as TypingGameDetails
-
-      for (const key of Object.keys(players)) {
-        const { entry } = players[key].gameStats.typing!
         const entryLength = entry.join(' ').length
         const elapsedTime = (Date.now() - gameDetails.startTime!) / 1000 / 60
         const wpm = entryLength / 5 / elapsedTime
-        await redis.json.set(
+
+        const gameStats: TypingGameStats = {
+          entry,
+          right,
+          current,
+          wpm,
+          mistakes: 0,
+          timeFinished: null,
+        }
+
+        const updated = await redis.json.set(
           `room:${room}`,
-          `$.players.${key}.gameStats.typing.wpm`,
-          wpm
+          `$.players["${id}"].gameStats.typing`,
+          gameStats as {}
         )
-        playersWPM.push({ wpm, player: key })
+
+        socket.to(room).emit('typing-update-data', id, gameStats)
       }
-      socket.emit('typing-update-wpm', playersWPM)
-    })
+    )
     socket.on('typing-finished', async (timeFinished: number) => {
       await redis.json.set(
         `room:${room}`,
-        `$.players.${id}.gameStats.typing.timeFinished`,
+        `$.players["${id}"].gameStats.typing.timeFinished`,
         timeFinished
       )
       await redis.json.set(`room:${room}`, '$.gameDetails.typing.winner', id)
       const newScore = await redis.json.numIncrBy(
         `room:${room}`,
-        `$.players.${id}.score`,
+        `$.players["${id}"].score`,
         1
       )
-      console.log('typing finished', id)
       setTimeout(async () => {
         await nextPhase(room)
       }, 3000)
@@ -361,28 +346,28 @@ function initializeGameSocket(nameSpace: Namespace) {
     socket.on('memory-next-level', async (level: number) => {
       await redis.json.set(
         `room:${room}`,
-        `$.players.${id}.gameStats.memory.level`,
+        `$.players["${id}"].gameStats.memory.level`,
         level
       )
       nameSpace.to(room).emit('memory-next-level', id)
     })
     socket.on('memory-game-over', async () => {
       clearTimeout(memoryTimeout)
-      const players = (await redis.json.get(`room:${room}`, {
-        path: '.players',
-      })) as {} as Player
+      const [players] = (await redis.json.get(`room:${room}`, {
+        path: '$.players',
+      })) as {} as Player[]
 
       const winnerKey = Object.keys(players).filter((key) => key !== id)[0]
 
       await redis.json.set(
         `room:${room}`,
-        '.gameDetails.memory.winner',
+        '$.gameDetails.memory.winner',
         winnerKey
       )
 
       await redis.json.numIncrBy(
         `room:${room}`,
-        `$.players.${winnerKey}.score`,
+        `$.players["${winnerKey}"].score`,
         1
       )
       gameSocket.to(room).emit('memory-game-over', winnerKey, null, id)
@@ -393,28 +378,27 @@ function initializeGameSocket(nameSpace: Namespace) {
     socket.on('memory-correct-tile', async () => {
       await redis.json.numIncrBy(
         `room:${room}`,
-        `$.players.${id}.gameStats.memory.correctTiles`,
+        `$.players["${id}"].gameStats.memory.correctTiles`,
         1
       )
     })
     socket.on('memory-finished', async () => {
       clearTimeout(memoryTimeout)
 
-      const winner = await redis.json.get(`room:${room}`, {
-        path: '.gameDetails.memory.winner',
-      })
+      const [winner] = (await redis.json.get(`room:${room}`, {
+        path: '$.gameDetails.memory.winner',
+      })) as string[]
 
       if (winner) {
         return
       }
 
       const finished = Date.now()
-      await redis.json.set(`room:${room}`, '.gameDetails.memory.winner', id)
-
-      await redis.json.numIncrBy(`room:${room}`, `$.players.${id}.score`, 1)
+      await redis.json.set(`room:${room}`, '$.gameDetails.memory.winner', id)
+      await redis.json.numIncrBy(`room:${room}`, `$.players["${id}"].score`, 1)
       await redis.json.set(
         `room:${room}`,
-        `$.players.${id}.timeFinished`,
+        `$.players["${id}"].timeFinished`,
         finished
       )
 
@@ -424,13 +408,13 @@ function initializeGameSocket(nameSpace: Namespace) {
       gameSocket.to(room).emit('memory-game-over', id, finished)
     })
     socket.on('connect-drop', async (row: number, col: number) => {
-      const players = (await redis.json.get(`room:${room}`, {
-        path: '.players',
-      })) as {} as Player
+      const [players] = (await redis.json.get(`room:${room}`, {
+        path: '$.players',
+      })) as {} as Player[]
 
-      const current = (await redis.json.get(`room:${room}`, {
-        path: '.gameDetails.connect.currentPlayer',
-      })) as string
+      const [current] = (await redis.json.get(`room:${room}`, {
+        path: '$.gameDetails.connect.currentPlayer',
+      })) as string[]
       const next = Object.keys(players).filter((key) => key !== current)[0]
 
       await redis.json.set(
@@ -445,12 +429,12 @@ function initializeGameSocket(nameSpace: Namespace) {
         1
       )
 
-      const grid = (await redis.json.get(`room:${room}`, {
-        path: '.gameDetails.connect.grid',
-      })) as (string | null)[][]
+      const [grid] = (await redis.json.get(`room:${room}`, {
+        path: '$.gameDetails.connect.grid',
+      })) as (string | null)[][][]
 
       // Full tile capacity (draw)
-      gameSocket.to(room).emit('connect-drop', row, col, current, next)
+      socket.to(room).emit('connect-drop', row, col, current, next)
       const checker = checkWin(row, col, current, grid)
       if (checker.win) {
         await redis.json.set(
@@ -460,7 +444,7 @@ function initializeGameSocket(nameSpace: Namespace) {
         )
         await redis.json.numIncrBy(
           `room:${room}`,
-          `$.players.${current}.score`,
+          `$.players["${current}"].score`,
           1
         )
 
@@ -512,9 +496,9 @@ function initializeGameSocket(nameSpace: Namespace) {
       }
     )
     socket.on('tie-breaker-lock-in', async (choice: TieBreakerChoices) => {
-      const players = (await redis.json.get(`room:${room}`, {
-        path: '.players',
-      })) as {} as Player
+      const [players] = (await redis.json.get(`room:${room}`, {
+        path: '$.players',
+      })) as {} as Player[]
       let lockedInCount = 0
 
       for (const key of Object.keys(players)) {
@@ -528,32 +512,32 @@ function initializeGameSocket(nameSpace: Namespace) {
         return
       }
 
-      const current = (await redis.json.get(`room:${room}`, {
-        path: `.players.${id}.gameStats.tieBreaker.lockedIn`,
-      })) as boolean
+      const [current] = (await redis.json.get(`room:${room}`, {
+        path: `$.players["${id}"].gameStats.tieBreaker.lockedIn`,
+      })) as boolean[]
 
       await redis.json.set(
         `room:${room}`,
-        `$.players.${id}.gameStats.tieBreaker.lockedIn`,
+        `$.players["${id}"].gameStats.tieBreaker.lockedIn`,
         !current
       )
 
       if (current) {
-        gameSocket.to(room).emit('toggle-lock-in', id, choice)
+        socket.to(room).emit('toggle-lock-in', id, choice)
         return
       }
 
       await redis.json.set(
         `room:${room}`,
-        `$.players.${id}.gameStats.tieBreaker.chosen`,
+        `$.players["${id}"].gameStats.tieBreaker.chosen`,
         choice
       )
 
       // proceed to revelation
       if (lockedInCount === 1) {
-        const updatedPlayers = (await redis.json.get(`room:${room}`, {
-          path: '.players',
-        })) as {} as Player
+        const [updatedPlayers] = (await redis.json.get(`room:${room}`, {
+          path: '$.players',
+        })) as {} as Player[]
         const playerKeys = Object.keys(updatedPlayers)
         const firstPlayer =
           updatedPlayers[playerKeys[0]].gameStats.tieBreaker?.chosen
@@ -567,7 +551,7 @@ function initializeGameSocket(nameSpace: Namespace) {
             chosen[key] = updatedPlayers[key].gameStats.tieBreaker!
               .chosen as TieBreakerChoices
           }
-          gameSocket.to(room).emit('toggle-lock-in', id, choice)
+          socket.to(room).emit('toggle-lock-in', id, choice)
           gameSocket.to(room).emit('tie-breaker-draw', chosen)
           setTimeout(async () => {
             await redis.json.set(
@@ -621,7 +605,7 @@ function initializeGameSocket(nameSpace: Namespace) {
 
         const score = (await redis.json.numIncrBy(
           `room:${room}`,
-          `$.players.${winner}.gameStats.tieBreaker.score`,
+          `$.players["${winner}"].gameStats.tieBreaker.score`,
           1
         )) as number
 
@@ -640,7 +624,7 @@ function initializeGameSocket(nameSpace: Namespace) {
           )
           await redis.json.numIncrBy(
             `room:${room}`,
-            `$.players.${winner}.score`,
+            `$.players["${winner}"].score`,
             1
           )
 
@@ -667,7 +651,7 @@ function initializeGameSocket(nameSpace: Namespace) {
         }, 3000)
       } else {
         // just normal flow
-        gameSocket.to(room).emit('toggle-lock-in', id, choice)
+        socket.to(room).emit('toggle-lock-in', id, choice)
       }
     })
   })
