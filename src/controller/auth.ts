@@ -13,7 +13,7 @@ export async function getGuestToken(req: Request, res: Response) {
         httpOnly: false,
         secure: isProduction,
         sameSite: 'none',
-        domain: isProduction ? process.env.CLIENT_URL : undefined,
+        domain: isProduction ? 'settled.jerome.jalandoon.online' : undefined,
         path: '/',
       })
     }
