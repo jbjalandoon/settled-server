@@ -12,7 +12,7 @@ const app = express()
 const server = createServer(app)
 export const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: process.env.CLIENT_URL || 'http://localhost:80',
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -42,7 +42,7 @@ app.use(cookieParser())
 app.use(json())
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: process.env.CLIENT_URL || 'http://localhost',
     credentials: true,
   })
 )
