@@ -14,7 +14,7 @@ export async function getGuestToken(req: Request, res: Response) {
         httpOnly: false,
         secure: true,
         sameSite: 'none',
-        domain: '.jerome.jalandoon.online',
+        domain: '.jeromejalandoon.online',
         path: '/',
       })
     }
