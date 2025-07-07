@@ -33,7 +33,7 @@ export async function getRoom(req: Request, res: Response) {
       .json({ ...roomDetails, joined: Boolean(isPlayerJoined) })
   } catch (error) {
     console.log(error)
-    res.status(200).json({
+    res.status(500).json({
       message: 'Something went wrong in the server',
     })
   }

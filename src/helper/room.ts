@@ -57,7 +57,7 @@ export const generateGames = (games: Games[], first: string) => {
           level: 1,
         }
         gameDetails[el] = {
-          sequence: Array.from({ length: 2 }, () =>
+          sequence: Array.from({ length: 15 }, () =>
             Math.floor(Math.random() * 9)
           ),
           winner: null,

@@ -2,7 +2,6 @@ import { v4 as uuid } from 'uuid'
 import { Request, Response } from 'express'
 
 const isProduction = process.env.ENV === 'production'
-console.log(isProduction)
 
 export async function getGuestToken(req: Request, res: Response) {
   try {
@@ -12,9 +11,9 @@ export async function getGuestToken(req: Request, res: Response) {
     if (!id) {
       res.cookie('id', token, {
         httpOnly: false,
-        secure: true,
-        sameSite: 'none',
-        domain: '.jeromejalandoon.online',
+        secure: isProduction,
+        sameSite: isProduction ? 'none' : 'lax',
+        domain: isProduction ? '.jeromejalandoon.online' : undefined,
         path: '/',
       })
     }

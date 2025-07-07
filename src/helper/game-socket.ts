@@ -226,12 +226,12 @@ function initializeGameSocket(nameSpace: Namespace) {
       if (
         Object.values(players).filter((el) => el.ready === true).length === 2
       ) {
-        const DURATION = 3000 // 3 seconds
-        const start = Date.now() + DURATION
-
         const [{ games, phase }] = (await redis.json.get(`room:${room}`, {
           path: '$',
         })) as {} as RoomDetails[]
+
+        const DURATION = 3000 // 3 seconds
+        const start = Date.now() + DURATION
 
         await redis.json.set(
           `room:${room}`,
@@ -244,7 +244,7 @@ function initializeGameSocket(nameSpace: Namespace) {
           await redis.json.set(`room:${room}`, '$.players.*.ready', false)
 
           nameSpace.to(room).emit('game-start', start, games[phase])
-        }, DURATION)
+        }, start - Date.now())
 
         if (games[phase] === 'memory') {
           memoryTimeout = setTimeout(async () => {
@@ -283,8 +283,8 @@ function initializeGameSocket(nameSpace: Namespace) {
 
             gameSocket.emit('memory-game-over', winner, null)
             await nextPhase(room)
-            // 7 minutes
-          }, 8000)
+            // 10 minutes
+          }, 603000)
         }
 
         nameSpace.to(room).emit('countdown', start)
@@ -543,7 +543,6 @@ function initializeGameSocket(nameSpace: Namespace) {
           updatedPlayers[playerKeys[0]].gameStats.tieBreaker?.chosen
         const secondPlayer =
           updatedPlayers[playerKeys[1]].gameStats.tieBreaker?.chosen
-        console.log(firstPlayer, secondPlayer)
 
         if (firstPlayer === secondPlayer) {
           const chosen: { [key in string]: TieBreakerChoices } = {}
